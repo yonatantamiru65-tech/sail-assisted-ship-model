@@ -1,0 +1,194 @@
+# =============================================================================
+#  KVLCC2 MMG 3-DOF MANEUVERING RUN  --  PROPELLER + RUDDER
+# =============================================================================
+#  Simulator : xdyn (D-ICE / SIREHNA).  3-DOF (surge u, sway v, yaw r).
+#  Ship      : KVLCC2 tanker, Lpp = 320 m, draft = 20.8 m.
+#  Scenario  : start at 7 m/s; propeller at 110 rpm; rudder steps 0 -> 10 deg
+#              at t = 300 s and is held -> a starboard turning circle.
+#  Self-contained: no mesh (.stl) file needed.
+#
+#  HOW TO RUN (writes mmg_updated.csv, see the "output:" block at the bottom):
+#     xdyn mmg_prop_rudder.yml --solver rk4 --dt 0.1 --tstart 0 --tend 2500
+#  (or use the MATLAB helper run_xdyn_yaml.m)
+#
+#  WHAT TO EDIT for common changes is flagged with  <-- EDIT  below.
+# =============================================================================
+
+# Order in which the 3 attitude angles are applied (yaw, then pitch, then roll).
+rotations convention: [psi, theta', phi'']
+
+# ---- Physical constants of the environment ----------------------------------
+environmental constants:
+    g:       {value: 9.8067, unit: m/s^2}      # gravity
+    rho:     {value: 1025,   unit: kg/m^3}     # sea-water density (hydro forces)
+    nu:      {value: 1.18e-6, unit: m^2/s}     # sea-water kinematic viscosity (rudder Reynolds no.)
+    air rho: {value: 1.225,  unit: kg/m^3}     # air density (only used if a sail is present)
+
+# ---- What the world contains ------------------------------------------------
+# Calm water, flat free surface. (No wind here: propeller+rudder needs none.
+#  For a sail run, add a "uniform wind" model -- see sail_only.yml.)
+environment models:
+  - model: no waves
+    constant sea elevation in NED frame: {unit: m, value: 0}
+
+bodies:
+  - name: ship
+
+    # Body frame location w.r.t. the (absent) mesh -- keep at origin.
+    position of body frame relative to mesh:
+        frame: mesh
+        x: {value: 0, unit: m}
+        y: {value: 0, unit: m}
+        z: {value: 0, unit: m}
+        phi:   {value: 0, unit: rad}
+        theta: {value: 0, unit: rad}
+        psi:   {value: 0, unit: rad}
+
+    # Where the ship starts in the world (North-East-Down).
+    initial position of body frame relative to NED:
+        frame: NED
+        x: {value: 0, unit: m}
+        y: {value: 0, unit: m}
+        z: {value: 0, unit: m}
+        phi:   {value: 0, unit: deg}
+        theta: {value: 0, unit: deg}
+        psi:   {value: 0, unit: deg}       # <-- EDIT initial heading
+
+    # Initial velocity, expressed in the ship (body) frame.
+    initial velocity of body frame relative to NED:
+        frame: ship
+        u: {value: 7, unit: m/s}           # <-- EDIT initial forward speed
+        v: {value: 0, unit: m/s}
+        w: {value: 0, unit: m/s}
+        p: {value: 0, unit: rad/s}
+        q: {value: 0, unit: rad/s}
+        r: {value: 0, unit: rad/s}
+
+    dynamics:
+        # Point about which hydrodynamic forces are reduced (body frame).
+        hydrodynamic forces calculation point in body frame:
+            x: {value: 0, unit: m}
+            y: {value: 0, unit: m}
+            z: {value: 0, unit: m}
+
+        # Centre of gravity (here only zG matters: CoG 2.2 m above the origin).
+        centre of inertia:
+            frame: ship
+            x: {value: 0,   unit: m}
+            y: {value: 0,   unit: m}
+            z: {value: 2.2, unit: m}
+
+        # 6x6 rigid-body inertia at the CoG, body axes.
+        #  rows/cols = [Fx Fy Fz | Mx My Mz].  Top-left 3x3 = mass*I (m=3.101981e8 kg).
+        #  Bottom-right 3x3 = moments/products of inertia; Izz = 2.464725e12 (yaw).
+        rigid body inertia matrix at the center of gravity and projected in the body frame:
+            row 1: [3.101981e+08,0.000000e+00,0.000000e+00,0.000000e+00,0.000000e+00,0.000000e+00]
+            row 2: [0.000000e+00,3.101981e+08,0.000000e+00,0.000000e+00,0.000000e+00,0.000000e+00]
+            row 3: [0.000000e+00,0.000000e+00,3.101981e+08,0.000000e+00,0.000000e+00,0.000000e+00]
+            row 4: [0.000000e+00,0.000000e+00,0.000000e+00,2.087872e+11,1.201552e+09,2.187367e+10]
+            row 5: [0.000000e+00,0.000000e+00,0.000000e+00,1.201552e+09,2.421491e+12,5.394442e+08]
+            row 6: [0.000000e+00,0.000000e+00,0.000000e+00,2.187367e+10,5.394442e+08,2.464725e+12]
+
+        # Hydrodynamic added mass. Zero here (added-mass effects are folded into
+        #  the MMG derivatives below). Fill this in only if you model it separately.
+        added mass matrix at the center of gravity and projected in the body frame:
+            row 1: [0, 0, 0, 0, 0, 0]
+            row 2: [0, 0, 0, 0, 0, 0]
+            row 3: [0, 0, 0, 0, 0, 0]
+            row 4: [0, 0, 0, 0, 0, 0]
+            row 5: [0, 0, 0, 0, 0, 0]
+            row 6: [0, 0, 0, 0, 0, 0]
+
+    # ---- External force models (each adds a wrench to the body) -------------
+    external forces:
+
+      # (1) Calm-water resistance in surge, as a speed->drag table.
+      #  IMPORTANT: values MUST be positive (xdyn subtracts them as drag). A
+      #  negative value becomes forward thrust and the run diverges. The -5 kn
+      #  mirror point keeps the interpolation valid if u dips slightly negative.
+      - model: resistance curve
+        speed:      { unit: knot, values: [-5, 0, 5, 10, 12, 14, 16, 18, 20] }
+        resistance: { unit: N,    values: [-2.1134e+5, 0, 2.1134e+5, 7.8256e+5, 1.1067e+6, 1.4945e+6, 1.9784e+6, 2.6336e+6, 3.3000e+6] }
+
+      # (2) MMG hull maneuvering forces (non-dimensional hydrodynamic derivatives).
+      #  X* = surge, Y* = sway, N* = yaw. Change these only to model a different
+      #  hull; they are the KVLCC2 tuned set.
+      - model: MMG maneuvering
+        calculation point in body frame:              # midship-referenced point
+            x: {value: -11.1, unit: m}
+            y: {value: 0, unit: m}
+            z: {value: 0, unit: m}
+        Lpp: {value: 320,  unit: m}
+        T:   {value: 20.8, unit: m}
+        Xvv: -0.04
+        Xrr: 0.011
+        Xvr: 0.002
+        Xvvvv: 0.771
+        Yv: -0.315
+        Yr: 0.083
+        Yvvv: -1.607
+        Yrvv: 0.379
+        Yvrr: -0.391
+        Yrrr: 0.008
+        Nv: -0.137
+        Nr: -0.049
+        Nvvv: -0.03
+        Nrvv: -0.294
+        Nvrr: 0.055
+        Nrrr: -0.013
+
+      # (3) Propeller + rudder unit. Thrust from a Wageningen-type propeller,
+      #  steering force from the rudder in the propeller slipstream. The rpm,
+      #  pitch ratio and rudder angle come from the "commands:" block below.
+      - name: propellerAndRudder
+        model: propeller+rudder
+        position of propeller frame:
+            frame: ship
+            x: {value: -163.82, unit: m}      # propeller location (aft)
+            y: {value: 0, unit: m}
+            z: {value: 15, unit: m}
+            phi:   {value: 0, unit: rad}
+            theta: {value: 0, unit: deg}
+            psi:   {value: 0, unit: deg}
+        wake coefficient w: 0.576             # inflow reduction at the propeller
+        relative rotative efficiency etaR: 1
+        thrust deduction factor t: 0.7        # hull thrust deduction
+        rotation: clockwise
+        number of blades: 5
+        blade area ratio AE/A0: 0.431
+        diameter: {value: 9.326, unit: m}
+        rudder area: {value: 136.7, unit: m^2}
+        rudder height: {value: 15.8, unit: m}
+        effective aspect ratio factor: 1.7
+        lift tuning coefficient: 2.1          # rudder lift scaling
+        drag tuning coefficient: 1            # rudder drag scaling
+        position of rudder in body frame:
+            x: {value: -170, unit: m}         # rudder location (aft of propeller)
+            y: {value: 0, unit: m}
+            z: {value: 10, unit: m}
+
+    # Lock the out-of-plane DOF so this stays a true 3-DOF (surge/sway/yaw) run:
+    #  w = heave, p = roll, q = pitch, all held at 0 for 0..2500 s.
+    blocked dof:
+       from YAML:
+         - {state: w, t: [0, 2500], value: [0, 0], interpolation: piecewise constant}
+         - {state: p, t: [0, 2500], value: [0, 0], interpolation: piecewise constant}
+         - {state: q, t: [0, 2500], value: [0, 0], interpolation: piecewise constant}
+
+# ---- Actuator commands over time --------------------------------------------
+#  Times and values are interpolated linearly. This is where you shape the
+#  maneuver: propeller rpm, pitch ratio P/D, and rudder angle beta.
+commands:
+  - name: propellerAndRudder
+    t:   [0, 299.9, 300, 2500]
+    rpm: {unit: rpm, values: [110, 110, 110, 110]}       # <-- EDIT propeller speed
+    P/D: {unit: 1,   values: [0.79, 0.79, 0.79, 0.79]}   # pitch/diameter ratio
+    beta: {unit: deg, values: [0, 0, 10, 10]}             # <-- EDIT rudder: step to 10 deg at 300 s
+
+# ---- What to write out ------------------------------------------------------
+#  CSV file + the columns to log. States are SI (angles in rad). The three
+#  F/M columns are the propeller+rudder load in the body frame about the origin.
+output:
+  - format: csv
+    filename: mmg_updated.csv
+    data: [t, 'x(ship)', 'y(ship)', 'z(ship)', 'phi(ship)', 'theta(ship)', 'psi(ship)', 'u(ship)', 'v(ship)', 'w(ship)', 'p(ship)', 'q(ship)', 'r(ship)', 'Fx(propellerAndRudder,ship,ship)', 'Fy(propellerAndRudder,ship,ship)', 'Mz(propellerAndRudder,ship,ship)']

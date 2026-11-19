@@ -1,0 +1,163 @@
+rotations convention: [psi, theta', phi'']
+
+# KVLCC2 MMG 3-DOF maneuvering run - COMBINED: propeller + rudder + sail.
+# Built by merging the working "sail_1" aerodynamic-polar block and the wind
+# environment from sail_only.yml into the propeller+rudder run
+# (mmg_updated_fixed_SFO.yml). Same conditions as both source files:
+#   - self-contained, no mesh file
+#   - resistance curve values POSITIVE (drag)
+#   - heave(w)/roll(p)/pitch(q) locked -> true 3-DOF
+#   - uniform 10 m/s wind, direction 90 deg (blows toward East; matches the
+#     MATLAB windNED = [0,10,0]) -- this is the value used to generate
+#     sail_only.csv, so it is confirmed, not a guess.
+# Emits Fx/Fy/Mz for BOTH propellerAndRudder and sail_1 so the MATLAB
+# "combined" case can validate the loads.
+
+environmental constants:
+    g: {value: 9.8067, unit: m/s^2}
+    rho: {value: 1025, unit: kg/m^3}
+    nu: {value: 1.18e-6, unit: m^2/s}
+    air rho: {value: 1.225, unit: kg/m^3}
+
+environment models:
+  - model: no waves
+    constant sea elevation in NED frame: {unit: m, value: 0}
+  - model: uniform wind
+    velocity: {unit: m/s, value: 10}
+    direction: {unit: deg, value: 90.0}
+
+bodies:
+  - name: ship
+    position of body frame relative to mesh:
+        frame: mesh
+        x: {value: 0, unit: m}
+        y: {value: 0, unit: m}
+        z: {value: 0, unit: m}
+        phi: {value: 0, unit: rad}
+        theta: {value: 0, unit: rad}
+        psi: {value: 0, unit: rad}
+    initial position of body frame relative to NED:
+        frame: NED
+        x: {value: 0, unit: m}
+        y: {value: 0, unit: m}
+        z: {value: 0, unit: m}
+        phi: {value: 0, unit: deg}
+        theta: {value: 0, unit: deg}
+        psi: {value: 0, unit: deg}
+    initial velocity of body frame relative to NED:
+        frame: ship
+        u: {value: 7, unit: m/s}
+        v: {value: 0, unit: m/s}
+        w: {value: 0, unit: m/s}
+        p: {value: 0, unit: rad/s}
+        q: {value: 0, unit: rad/s}
+        r: {value: 0, unit: rad/s}
+    dynamics:
+        hydrodynamic forces calculation point in body frame:
+            x: {value: 0, unit: m}
+            y: {value: 0, unit: m}
+            z: {value: 0, unit: m}
+        centre of inertia:
+            frame: ship
+            x: {value: 0, unit: m}
+            y: {value: 0, unit: m}
+            z: {value: 2.2, unit: m}
+        rigid body inertia matrix at the center of gravity and projected in the body frame:
+            row 1: [3.101981e+08,0.000000e+00,0.000000e+00,0.000000e+00,0.000000e+00,0.000000e+00]
+            row 2: [0.000000e+00,3.101981e+08,0.000000e+00,0.000000e+00,0.000000e+00,0.000000e+00]
+            row 3: [0.000000e+00,0.000000e+00,3.101981e+08,0.000000e+00,0.000000e+00,0.000000e+00]
+            row 4: [0.000000e+00,0.000000e+00,0.000000e+00,2.087872e+11,1.201552e+09,2.187367e+10]
+            row 5: [0.000000e+00,0.000000e+00,0.000000e+00,1.201552e+09,2.421491e+12,5.394442e+08]
+            row 6: [0.000000e+00,0.000000e+00,0.000000e+00,2.187367e+10,5.394442e+08,2.464725e+12]
+        added mass matrix at the center of gravity and projected in the body frame:
+            row 1: [0, 0, 0, 0, 0, 0]
+            row 2: [0, 0, 0, 0, 0, 0]
+            row 3: [0, 0, 0, 0, 0, 0]
+            row 4: [0, 0, 0, 0, 0, 0]
+            row 5: [0, 0, 0, 0, 0, 0]
+            row 6: [0, 0, 0, 0, 0, 0]
+    external forces:
+      # Calm-water resistance in surge (POSITIVE = drag).
+      - model: resistance curve
+        speed:      { unit: knot, values: [-5, 0, 5, 10, 12, 14, 16, 18, 20] }
+        resistance: { unit: N,    values: [-2.1134e+5, 0, 2.1134e+5, 7.8256e+5, 1.1067e+6, 1.4945e+6, 1.9784e+6, 2.6336e+6, 3.3000e+6] }
+      - model: MMG maneuvering
+        calculation point in body frame:
+            x: {value: -11.1, unit: m}
+            y: {value: 0, unit: m}
+            z: {value: 0, unit: m}
+        Lpp: {value: 320, unit: m}
+        T: {value: 20.8, unit: m}
+        Xvv: -0.04
+        Xrr: 0.011
+        Xvr: 0.002
+        Xvvvv: 0.771
+        Yv: -0.315
+        Yr: 0.083
+        Yvvv: -1.607
+        Yrvv: 0.379
+        Yvrr: -0.391
+        Yrrr: 0.008
+        Nv: -0.137
+        Nr: -0.049
+        Nvvv: -0.03
+        Nrvv: -0.294
+        Nvrr: 0.055
+        Nrrr: -0.013
+      - name: propellerAndRudder
+        model: propeller+rudder
+        position of propeller frame:
+            frame: ship
+            x: {value: -163.82, unit: m}
+            y: {value: 0, unit: m}
+            z: {value: 15, unit: m}
+            phi: {value: 0, unit: rad}
+            theta: {value: 0, unit: deg}
+            psi: {value: 0, unit: deg}
+        wake coefficient w: 0.576
+        relative rotative efficiency etaR: 1
+        thrust deduction factor t: 0.7
+        rotation: clockwise
+        number of blades: 5
+        blade area ratio AE/A0: 0.431
+        diameter: {value: 9.326, unit: m}
+        rudder area: {value: 136.7, unit: m^2}
+        rudder height: {value: 15.8, unit: m}
+        effective aspect ratio factor: 1.7
+        lift tuning coefficient: 2.1
+        drag tuning coefficient: 1
+        position of rudder in body frame:
+            x: {value: -170, unit: m}
+            y: {value: 0, unit: m}
+            z: {value: 10, unit: m}
+      # Aerodynamic sail - exact block from sail_only.yml (name "sail_1").
+      - name: sail_1
+        model: aerodynamic polar
+        calculation point in body frame:
+            x: {value: 0, unit: m}
+            y: {value: 0, unit: m}
+            z: {value: -21, unit: m}
+            phi: {value: 0, unit: rad}
+            theta: {value: 0, unit: deg}
+            psi: {value: 0, unit: deg}
+        reference area: {value: 1000, unit: m^2}
+        AWA: {unit: deg, values: [0,7,9,12,28,60,90,120,150,180]}
+        lift coefficient: [0.00000,0.94828,1.13793,1.25000,1.42681,1.38319,1.26724,0.93103,0.38793,-0.11207]
+        drag coefficient: [0.03448,0.01724,0.01466,0.01466,0.02586,0.11302,0.38250,0.96888,1.31578,1.34483]
+    blocked dof:
+       from YAML:
+         - {state: w, t: [0, 2500], value: [0, 0], interpolation: piecewise constant}
+         - {state: p, t: [0, 2500], value: [0, 0], interpolation: piecewise constant}
+         - {state: q, t: [0, 2500], value: [0, 0], interpolation: piecewise constant}
+
+commands:
+  - name: propellerAndRudder
+    t: [0, 299.9, 300, 2500]
+    rpm: {unit: rpm, values: [110, 110, 110, 110]}
+    P/D: {unit: 1, values: [0.79, 0.79, 0.79, 0.79]}
+    beta: {unit: deg, values: [0, 0, 10, 10]}
+
+output:
+  - format: csv
+    filename: combined.csv
+    data: [t, 'x(ship)', 'y(ship)', 'z(ship)', 'phi(ship)', 'theta(ship)', 'psi(ship)', 'u(ship)', 'v(ship)', 'w(ship)', 'p(ship)', 'q(ship)', 'r(ship)', 'Fx(propellerAndRudder,ship,ship)', 'Fy(propellerAndRudder,ship,ship)', 'Mz(propellerAndRudder,ship,ship)', 'Fx(sail_1,ship,ship)', 'Fy(sail_1,ship,ship)', 'Mz(sail_1,ship,ship)']

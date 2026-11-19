@@ -1,0 +1,160 @@
+# =============================================================================
+#  KVLCC2 MMG 3-DOF MANEUVERING RUN  --  SAIL ONLY (no propeller, no rudder)
+# =============================================================================
+#  Simulator : xdyn (D-ICE / SIREHNA).  3-DOF (surge u, sway v, yaw r).
+#  Ship      : KVLCC2 tanker, Lpp = 320 m, draft = 20.8 m.
+#  Scenario  : released at 7 m/s into a steady 10 m/s beam wind. The only
+#              thrust source is the aerodynamic sail "sail_1"; there is no
+#              propeller and no rudder command, so the ship coasts + sails.
+#  Purpose   : isolate the sail's force so the MATLAB model can be validated
+#              against the sail loads Fx/Fy/Mz(sail_1,...).
+#
+#  HOW TO RUN (writes sail_only.csv, see the "output:" block at the bottom):
+#     xdyn sail_only_commented.yml --solver rk4 --dt 0.1 --tstart 0 --tend 2500
+#
+#  vs the propeller+rudder file, the TWO differences are:
+#     (A) a "uniform wind" environment model (a sail does nothing without wind)
+#     (B) the "sail_1" aerodynamic-polar force instead of "propeller+rudder"
+#  Lines to edit for common changes are flagged with  <-- EDIT.
+# =============================================================================
+
+rotations convention: [psi, theta', phi'']
+
+environmental constants:
+    g:       {value: 9.8067, unit: m/s^2}
+    rho:     {value: 1025,   unit: kg/m^3}     # sea-water density
+    nu:      {value: 1.18e-6, unit: m^2/s}
+    air rho: {value: 1.225,  unit: kg/m^3}     # air density -> drives the sail force
+
+environment models:
+  - model: no waves
+    constant sea elevation in NED frame: {unit: m, value: 0}
+
+  # (A) UNIFORM WIND -- required for the sail to produce any force.
+  #  direction is measured clockwise from North as the bearing the wind blows
+  #  TOWARD: 90 deg = blowing due East (a wind FROM the West). This matches the
+  #  MATLAB windNED = [0, 10, 0]. Change these two lines to change the wind.
+  - model: uniform wind
+    velocity:  {unit: m/s, value: 10}          # <-- EDIT wind speed
+    direction: {unit: deg, value: 90.0}        # <-- EDIT wind direction (toward, CW from North)
+
+bodies:
+  - name: ship
+    position of body frame relative to mesh:
+        frame: mesh
+        x: {value: 0, unit: m}
+        y: {value: 0, unit: m}
+        z: {value: 0, unit: m}
+        phi:   {value: 0, unit: rad}
+        theta: {value: 0, unit: rad}
+        psi:   {value: 0, unit: rad}
+    initial position of body frame relative to NED:
+        frame: NED
+        x: {value: 0, unit: m}
+        y: {value: 0, unit: m}
+        z: {value: 0, unit: m}
+        phi:   {value: 0, unit: deg}
+        theta: {value: 0, unit: deg}
+        psi:   {value: 0, unit: deg}       # <-- EDIT initial heading
+    initial velocity of body frame relative to NED:
+        frame: ship
+        u: {value: 7, unit: m/s}           # <-- EDIT initial forward speed
+        v: {value: 0, unit: m/s}
+        w: {value: 0, unit: m/s}
+        p: {value: 0, unit: rad/s}
+        q: {value: 0, unit: rad/s}
+        r: {value: 0, unit: rad/s}
+    dynamics:
+        hydrodynamic forces calculation point in body frame:
+            x: {value: 0, unit: m}
+            y: {value: 0, unit: m}
+            z: {value: 0, unit: m}
+        centre of inertia:
+            frame: ship
+            x: {value: 0,   unit: m}
+            y: {value: 0,   unit: m}
+            z: {value: 2.2, unit: m}
+        rigid body inertia matrix at the center of gravity and projected in the body frame:
+            row 1: [3.101981e+08,0.000000e+00,0.000000e+00,0.000000e+00,0.000000e+00,0.000000e+00]
+            row 2: [0.000000e+00,3.101981e+08,0.000000e+00,0.000000e+00,0.000000e+00,0.000000e+00]
+            row 3: [0.000000e+00,0.000000e+00,3.101981e+08,0.000000e+00,0.000000e+00,0.000000e+00]
+            row 4: [0.000000e+00,0.000000e+00,0.000000e+00,2.087872e+11,1.201552e+09,2.187367e+10]
+            row 5: [0.000000e+00,0.000000e+00,0.000000e+00,1.201552e+09,2.421491e+12,5.394442e+08]
+            row 6: [0.000000e+00,0.000000e+00,0.000000e+00,2.187367e+10,5.394442e+08,2.464725e+12]
+        added mass matrix at the center of gravity and projected in the body frame:
+            row 1: [0, 0, 0, 0, 0, 0]
+            row 2: [0, 0, 0, 0, 0, 0]
+            row 3: [0, 0, 0, 0, 0, 0]
+            row 4: [0, 0, 0, 0, 0, 0]
+            row 5: [0, 0, 0, 0, 0, 0]
+            row 6: [0, 0, 0, 0, 0, 0]
+
+    external forces:
+      # (1) Calm-water resistance -- MUST be positive (drag). Same as the
+      #  propeller+rudder file. See that file's note on the sign.
+      - model: resistance curve
+        speed:      { unit: knot, values: [-5, 0, 5, 10, 12, 14, 16, 18, 20] }
+        resistance: { unit: N,    values: [-2.1134e+5, 0, 2.1134e+5, 7.8256e+5, 1.1067e+6, 1.4945e+6, 1.9784e+6, 2.6336e+6, 3.3000e+6] }
+
+      # (2) MMG hull maneuvering forces (KVLCC2 tuned set). Identical to the
+      #  propeller+rudder file.
+      - model: MMG maneuvering
+        calculation point in body frame:
+            x: {value: -11.1, unit: m}
+            y: {value: 0, unit: m}
+            z: {value: 0, unit: m}
+        Lpp: {value: 320,  unit: m}
+        T:   {value: 20.8, unit: m}
+        Xvv: -0.04
+        Xrr: 0.011
+        Xvr: 0.002
+        Xvvvv: 0.771
+        Yv: -0.315
+        Yr: 0.083
+        Yvvv: -1.607
+        Yrvv: 0.379
+        Yvrr: -0.391
+        Yrrr: 0.008
+        Nv: -0.137
+        Nr: -0.049
+        Nvvv: -0.03
+        Nrvv: -0.294
+        Nvrr: 0.055
+        Nrrr: -0.013
+
+      # (B) AERODYNAMIC SAIL "sail_1" -- a strip/polar wingsail.
+      #  The force = 0.5 * rho_air * V_app^2 * area * (CL, CD), with CL/CD read
+      #  off the polar vs Apparent Wind Angle (AWA). It acts at the point below
+      #  (x=0, y=0 on the centreline, z=-21 m i.e. 21 m ABOVE the origin), so it
+      #  makes ZERO yaw moment about the origin -- Mz(sail_1) is ~0. The sail
+      #  steers the ship only through its sway force coupling into the hull.
+      - name: sail_1
+        model: aerodynamic polar
+        calculation point in body frame:
+            x: {value: 0, unit: m}
+            y: {value: 0, unit: m}
+            z: {value: -21, unit: m}          # <-- EDIT centre-of-effort height (negative = up)
+            phi:   {value: 0, unit: rad}
+            theta: {value: 0, unit: deg}
+            psi:   {value: 0, unit: deg}
+        reference area: {value: 1000, unit: m^2}   # <-- EDIT sail area
+        # Polar: CL and CD sampled at these apparent-wind angles (symmetric 0..180 deg).
+        #  Keep the three lists the SAME length. Edit to model a different sail.
+        AWA: {unit: deg, values: [0,7,9,12,28,60,90,120,150,180]}
+        lift coefficient: [0.00000,0.94828,1.13793,1.25000,1.42681,1.38319,1.26724,0.93103,0.38793,-0.11207]
+        drag coefficient: [0.03448,0.01724,0.01466,0.01466,0.02586,0.11302,0.38250,0.96888,1.31578,1.34483]
+
+    # Lock heave/roll/pitch -> true 3-DOF.
+    blocked dof:
+       from YAML:
+         - {state: w, t: [0, 2500], value: [0, 0], interpolation: piecewise constant}
+         - {state: p, t: [0, 2500], value: [0, 0], interpolation: piecewise constant}
+         - {state: q, t: [0, 2500], value: [0, 0], interpolation: piecewise constant}
+
+# NOTE: there is NO "commands:" block here -- with no propeller/rudder there is
+#  nothing to command. The ship moves under wind + momentum + resistance only.
+
+output:
+  - format: csv
+    filename: sail_only.csv
+    data: [t, 'x(ship)', 'y(ship)', 'z(ship)', 'phi(ship)', 'theta(ship)', 'psi(ship)', 'u(ship)', 'v(ship)', 'w(ship)', 'p(ship)', 'q(ship)', 'r(ship)', 'Fx(sail_1,ship,ship)', 'Fy(sail_1,ship,ship)', 'Mz(sail_1,ship,ship)']
